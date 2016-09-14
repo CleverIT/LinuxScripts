@@ -1,0 +1,2 @@
+15 3 * * 6 (cd /root/LinuxScripts/autoUpdate && exec ./autoUpdate.sh > ./updatelog.log 2>&1)
+
