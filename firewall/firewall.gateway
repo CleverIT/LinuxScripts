@@ -1,0 +1,10 @@
+#!/bin/sh
+
+###
+# Forward (external packages targeting external addresses)
+###
+
+iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+
+iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+# iptables -A FORWARD -s X.X.X.X                   -j ACCEPT  # Accept packages from this IP for forwarding

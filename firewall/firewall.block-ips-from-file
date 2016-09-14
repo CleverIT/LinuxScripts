@@ -1,0 +1,7 @@
+###
+# Block IPs based on text file with CIDR addresses; one per line
+###
+egrep -v "^\s*#|^$" /path/to/file | while read ip
+do
+    iptables -A INPUT -s $ip -j DROP
+done

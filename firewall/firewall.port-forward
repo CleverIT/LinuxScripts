@@ -1,0 +1,14 @@
+#!/bin/sh
+
+###
+# Prerouting (external packages prerouting)
+###
+
+iptables -t nat -A PREROUTING -p tcp -i eth0 --dport Y -j DNAT --to-destination X.X.X.X:Z  # Port Y forwards to IP X target port Z
+
+###
+# Forward (external packages targeting external addresses)
+###
+
+iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A FORWARD -p tcp -d X.X.X.X --dport Z -j ACCEPT  # lxtest SSH

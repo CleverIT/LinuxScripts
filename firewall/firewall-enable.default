@@ -1,0 +1,42 @@
+#!/bin/sh
+
+# Firewall script - called by /etc/rc.local
+
+# Flush firewall settings
+iptables           -F
+iptables -t nat    -F
+iptables -t mangle -F
+
+# Drop packet when no rule matches
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+
+# Output is unrestricted
+iptables -P OUTPUT ACCEPT
+
+# Load required modules
+modprobe nf_conntrack_ftp
+
+###
+# Input (external packages arriving) filters
+###
+iptables -A INPUT -i lo   -j ACCEPT
+iptables -A INPUT -p icmp -j ACCEPT
+
+# All interfaces
+#iptables -A INPUT -s XX.XX.XX.XX -j REJECT  # Blokkade op IP-adres
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# Private interface
+iptables -A INPUT -i eth0 -p tcp --dport 22 -s 192.168.211.0/24  -j ACCEPT  # SSH Local range
+
+# Public interface
+#iptables -A INPUT -i eth1 -p tcp --dport 22 -s 192.168.211.0/24  -j ACCEPT  # SSH Local range
+#iptables -A INPUT -i eth1 -p tcp --dport 80                      -j ACCEPT  # HTTP
+#iptables -A INPUT -i eth1 -p tcp --dport 443                     -j ACCEPT  # HTTPS
+
+###
+# Output (local packages leaving) filters
+###
+
+# No rules for outbound packets

@@ -1,0 +1,62 @@
+#!/bin/sh
+
+# Firewall script - called by /etc/rc.local
+
+# Flush firewall settings
+iptables           -F
+iptables -t nat    -F
+iptables -t mangle -F
+
+# Drop packet when no rule matches
+iptables -P INPUT   DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT  DROP
+
+# Load required modules
+modprobe nf_conntrack_ftp
+
+###
+# Input (external packages arriving) filters
+###
+iptables -A INPUT -i lo   -j ACCEPT
+iptables -A INPUT -p icmp -j ACCEPT
+
+# Established/related packets are always allowed
+iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT  -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# Server basic functionalities
+iptables -A OUTPUT -o eth0 -p udp -d 192.168.2.2            --dport 53  -j ACCEPT  # DNS server02
+iptables -A OUTPUT -o eth1 -p tcp -d doc.php.net            --dport 80  -j ACCEPT  # HTTP
+iptables -A OUTPUT -o eth1 -p tcp -d mirror.nl.leaseweb.net --dport 80  -j ACCEPT  # HTTP
+iptables -A OUTPUT -o eth1 -p tcp -d nodejs.org             --dport 80  -j ACCEPT  # HTTP
+iptables -A OUTPUT -o eth1 -p tcp -d packages.debian.org    --dport 80  -j ACCEPT  # HTTP
+iptables -A OUTPUT -o eth1 -p tcp -d pear.php.net           --dport 80  -j ACCEPT  # HTTP
+iptables -A OUTPUT -o eth1 -p tcp -d pecl.php.net           --dport 80  -j ACCEPT  # HTTP
+iptables -A OUTPUT -o eth1 -p tcp -d security.debian.org    --dport 80  -j ACCEPT  # HTTP
+iptables -A OUTPUT -o eth1 -p udp                           --dport 123 -j ACCEPT  # NTP
+iptables -A OUTPUT -o eth1 -p tcp -d registry.npmjs.org     --dport 443 -j ACCEPT  # HTTPS
+
+# Incoming maintenance
+iptables -A INPUT -i eth0 -p tcp                   --dport 22  -j ACCEPT  # SSH management interface
+iptables -A INPUT -i eth1 -p tcp -s 8.8.8.8  --dport 22  -j ACCEPT  # SSH
+
+# Local connections
+iptables -A OUTPUT -o lo -d 127.0.0.1    -j ACCEPT  # Local lo
+iptables -A OUTPUT -o lo -d X.X.X.X      -j ACCEPT  # Local eth1
+
+# External access port 80
+iptables -A INPUT -i eth1 -p tcp -s X.X.X.X --dport 80 -j ACCEPT  # HTTP
+iptables -A INPUT -i eth1 -p tcp -s X.X.X.X --dport 80 -j ACCEPT  # HTTP
+#etc
+
+# External access 443
+iptables -A INPUT -i eth1 -p tcp -s X.X.X.X --dport 443 -j ACCEPT  # HTTPS
+iptables -A INPUT -i eth1 -p tcp -s X.X.X.X --dport 443 -j ACCEPT  # HTTPS
+#etc
+
+###
+# Output (local packages leaving) filters
+###
+
+# Optional

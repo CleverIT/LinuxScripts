@@ -1,0 +1,20 @@
+#!/bin/sh
+
+# Flush firewall settings
+iptables -F
+iptables -t nat -F
+iptables -t mangle -F
+
+# Only block FORWARD
+iptables -P INPUT ACCEPT
+iptables -P FORWARD DROP
+iptables -P OUTPUT ACCEPT
+
+# Unload modules (reversed order of dependency)
+rmmod nf_conntrack_ftp
+rmmod iptable_nat
+rmmod nf_nat_ipv4
+rmmod nf_nat
+rmmod nf_conntrack_ipv4
+rmmod xt_conntrack
+rmmod nf_conntrack
