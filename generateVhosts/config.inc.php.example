@@ -16,7 +16,7 @@ $FPMMaxChildren = 8;
 
 $vhosts = [
     'username' => [
-        //'allow' => '192.168.0.0/24',
+        //'allow' => 'whitelist', // uses whitelist.txt
         //'defaultIP' => '95.170.75.8',
         'vhosts' => [
             'vhost-domain.nl' => ['target' => 'vhost-dirname', 'port' => 80],
@@ -25,7 +25,7 @@ $vhosts = [
             //  'IP' => '127.0.0.1',
             //  'ports' => [80, 443],
             //  'aliases' => ['www.ietsanders.nl', 'iets.anders.nl'],
-            //  'allow' => 'whitelist', // uses whitelist.txt
+            //  'allow' => '192.168.0.0/24', 
             //  'sslCert' => '/path/to/ssl.crt',
             //  'sslKey' => '/path/to/ssl.key',
             //  'customConfig' => [
