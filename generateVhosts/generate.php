@@ -29,7 +29,6 @@ foreach ($vhosts as $name => $groupConfig) {
     } else {
         $allow = 'all';
     }
-    $allow = isset($groupConfig['allow']) ? $groupConfig['allow'] : 'all';
     $defaultIP = isset($groupConfig['defaultIP']) ? $groupConfig['defaultIP'] : '*';
 
     $currentVhostPath = sprintf($vhostsPath, $name);
