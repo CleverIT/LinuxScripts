@@ -44,6 +44,7 @@ foreach ($vhosts as $name => $groupConfig) {
         $contents .= "\t" . 'Allow from ' . $allow . "\n";
         $contents .= "\t" . 'Require ' . $allow . ' granted' . "\n";
     } else {
+        echo 'Whitelist used' . PHP_EOL;
         $whitelistRaw = file('whitelist.txt');
         foreach($whitelistRaw as $whiteListEntry) {
             if (substr($whiteListEntry, 0, 1) == '#') continue;
