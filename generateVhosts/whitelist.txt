@@ -1,0 +1,13 @@
+# Onderstaande regels geven externe toegang tot Apache site
+#
+# Elke regel (uitgezonderd witregels en comments) is één van onderstaand:
+# 1. Een IP-adres in CIDR-notatie
+# 2. Een hostname te resolven via DNS (gebeurt alleen tijdens bijwerken firewall)
+#
+# Comments moeten op een eigen regel staan!
+# Na aanpassen van dit document generateVhosts draaien.
+
+# AuguSoft kantoorverbindingen
+host location1.cleverit.nl
+95.170.77.5
+95.170.77.6

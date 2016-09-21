@@ -20,64 +20,86 @@ $contents = '';
 $FPMContents = '';
 $createDirs = [];
 foreach ($vhosts as $name => $groupConfig) {
-        $allow = isset($groupConfig['allow']) ? $groupConfig['allow'] : 'all';
-        $defaultIP = isset($groupConfig['defaultIP']) ? $groupConfig['defaultIP'] : '*';
-
-        $currentVhostPath = sprintf($vhostsPath, $name);
-
-        $contents .= 'FastCGIExternalServer /home/' . $name . '/vhosts/php5.fcgi -socket /var/run/php5-fpm-' . $name . '.sock -pass-header Authorization -idle-timeout 3600 -flush' . "\n";
-
-        $contents .= '<Directory ' . $currentVhostPath . '>' . "\n";
-        $contents .= "\t" . 'Order Allow,Deny' . "\n";
-        $contents .= "\t" . 'Allow from ' . $allow . "\n";
-        $contents .= "\t" . 'Options +Indexes' . "\n";
-        $contents .= "\t" . 'AllowOverride all' . "\n";
-        $contents .= "\t" . 'Require ' . $allow . ' granted' . "\n";
-        $contents .= '</Directory>' . "\n";
-
-        foreach ($groupConfig['vhosts'] as $serverName => $serverConfig) {
-                $currentWebsitePath = sprintf($websitePath, $name, $serverConfig['target']);
-                foreach ($skipFolders as $skipFolder) {
-                    if (substr($currentWebsitePath, 0, strlen($skipFolder)) == $skipFolder) {
-                        continue 2;
-                    }
-                }
-
-                if (!is_dir($currentWebsitePath) && !file_exists($currentWebsitePath)) {
-                    $createDirs[] = ['path' => $currentWebsitePath, 'user' => $name];
-                }
-
-                $IP = isset($serverConfig['IP']) ? $serverConfig['IP'] : $defaultIP;
-                $ports = isset($serverConfig['port']) ? [$serverConfig['port']] : $serverConfig['ports'];
-                $aliases = isset($serverConfig['aliases']) ? $serverConfig['aliases'] : [];
-                $sslCert = isset($serverConfig['sslCert']) ? $serverConfig['sslCert'] : $genericSSLCert;
-                $sslKey = isset($serverConfig['sslKey']) ? $serverConfig['sslKey'] : $genericSSLKey;
-                $customConfig = isset($serverConfig['customConfig']) ? $serverConfig['customConfig'] : [];
-                foreach ($ports as $port) {
-                        $contents .= '<VirtualHost ' . $IP . ':' . $port . '>' . "\n";
-                        $contents .= "\t" . 'ServerName ' . $serverName . "\n";
-                        if (count($aliases) > 0) {
-                            $contents .= "\t" . 'ServerAlias ' . implode(' ', $aliases) . "\n";
-                        }
-                        $contents .= "\t" . 'DocumentRoot ' . $currentWebsitePath . "\n";
-                        $contents .= "\t" . 'Alias /php5.fcgi /home/' . $name . '/vhosts/php5.fcgi' . "\n";
-                        if ($port == 443) {
-                            $contents .= "\t" . 'SSLEngine on' . "\n";
-                            $contents .= "\t" . 'SSLCertificateFile ' . $sslCert . "\n";
-                            $contents .= "\t" . 'SSLCertificateKeyFile ' . $sslKey . "\n";
-                        }
-                        if (isset($serverConfig['allow'])) {
-                            $contents .= "\t" . '<Directory ' . $currentWebsitePath . '>' . "\n";
-                            $contents .= "\t\t" . 'Order Allow,Deny' . "\n";
-                            $contents .= "\t\t" . 'Allow from ' . $serverConfig['allow'] . "\n";
-                            $contents .= "\t" . '</Directory>' . "\n";
-                        }
-                        foreach ($customConfig as $customLine) {
-                            $contents .= "\t" . trim($customLine) . "\n";
-                        }
-                        $contents .= '</VirtualHost>' . "\n";
-                }
+    if(isset($groupConfig['allow'])) {
+        if ($groupConfig['allow'] == 'whitelist') {
+            $allow = false;
+        } else {
+            $allow = $groupConfig['allow'];
         }
+    } else {
+        $allow = 'all';
+    }
+    $allow = isset($groupConfig['allow']) ? $groupConfig['allow'] : 'all';
+    $defaultIP = isset($groupConfig['defaultIP']) ? $groupConfig['defaultIP'] : '*';
+
+    $currentVhostPath = sprintf($vhostsPath, $name);
+
+    $contents .= 'FastCGIExternalServer /home/' . $name . '/vhosts/php5.fcgi -socket /var/run/php5-fpm-' . $name . '.sock -pass-header Authorization -idle-timeout 3600 -flush' . "\n";
+
+    $contents .= '<Directory ' . $currentVhostPath . '>' . "\n";
+    $contents .= "\t" . 'Order Allow,Deny' . "\n";
+    $contents .= "\t" . 'Options +Indexes' . "\n";
+    $contents .= "\t" . 'AllowOverride all' . "\n";
+    if ($allow !== false) {
+        $contents .= "\t" . 'Allow from ' . $allow . "\n";
+        $contents .= "\t" . 'Require ' . $allow . ' granted' . "\n";
+    } else {
+        $whitelistRaw = file('whitelist.txt');
+        foreach($whitelistRaw as $whiteListEntry) {
+            if (substr($whiteListEntry, 0, 1) == '#') continue;
+            if (trim($whiteListEntry) == '') continue;
+            if (substr($whiteListEntry, 0, 5) == 'host ') {
+                $contents .= "\t" . 'Require ' . trim($whiteListEntry) . "\n";
+            } else {
+                $contents .= "\t" . 'Require ip ' . trim($whiteListEntry) . "\n";
+            }
+        }
+    }
+    $contents .= '</Directory>' . "\n";
+
+    foreach ($groupConfig['vhosts'] as $serverName => $serverConfig) {
+            $currentWebsitePath = sprintf($websitePath, $name, $serverConfig['target']);
+            foreach ($skipFolders as $skipFolder) {
+                if (substr($currentWebsitePath, 0, strlen($skipFolder)) == $skipFolder) {
+                    continue 2;
+                }
+            }
+
+            if (!is_dir($currentWebsitePath) && !file_exists($currentWebsitePath)) {
+                $createDirs[] = ['path' => $currentWebsitePath, 'user' => $name];
+            }
+
+            $IP = isset($serverConfig['IP']) ? $serverConfig['IP'] : $defaultIP;
+            $ports = isset($serverConfig['port']) ? [$serverConfig['port']] : $serverConfig['ports'];
+            $aliases = isset($serverConfig['aliases']) ? $serverConfig['aliases'] : [];
+            $sslCert = isset($serverConfig['sslCert']) ? $serverConfig['sslCert'] : $genericSSLCert;
+            $sslKey = isset($serverConfig['sslKey']) ? $serverConfig['sslKey'] : $genericSSLKey;
+            $customConfig = isset($serverConfig['customConfig']) ? $serverConfig['customConfig'] : [];
+            foreach ($ports as $port) {
+                    $contents .= '<VirtualHost ' . $IP . ':' . $port . '>' . "\n";
+                    $contents .= "\t" . 'ServerName ' . $serverName . "\n";
+                    if (count($aliases) > 0) {
+                        $contents .= "\t" . 'ServerAlias ' . implode(' ', $aliases) . "\n";
+                    }
+                    $contents .= "\t" . 'DocumentRoot ' . $currentWebsitePath . "\n";
+                    $contents .= "\t" . 'Alias /php5.fcgi /home/' . $name . '/vhosts/php5.fcgi' . "\n";
+                    if ($port == 443) {
+                        $contents .= "\t" . 'SSLEngine on' . "\n";
+                        $contents .= "\t" . 'SSLCertificateFile ' . $sslCert . "\n";
+                        $contents .= "\t" . 'SSLCertificateKeyFile ' . $sslKey . "\n";
+                    }
+                    if (isset($serverConfig['allow'])) {
+                        $contents .= "\t" . '<Directory ' . $currentWebsitePath . '>' . "\n";
+                        $contents .= "\t\t" . 'Order Allow,Deny' . "\n";
+                        $contents .= "\t\t" . 'Allow from ' . $serverConfig['allow'] . "\n";
+                        $contents .= "\t" . '</Directory>' . "\n";
+                    }
+                    foreach ($customConfig as $customLine) {
+                        $contents .= "\t" . trim($customLine) . "\n";
+                    }
+                    $contents .= '</VirtualHost>' . "\n";
+            }
+    }
 
     // Add FPM
     $FPMContents .= '[' . $name . ']' . "\n";
