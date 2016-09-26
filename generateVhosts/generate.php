@@ -50,7 +50,7 @@ foreach ($vhosts as $name => $groupConfig) {
             if (substr($whiteListEntry, 0, 1) == '#') continue;
             if (trim($whiteListEntry) == '') continue;
             if (substr($whiteListEntry, 0, 5) == 'host ') {
-                $contents .= "\t" . 'Require ' . trim($whiteListEntry) . "\n";
+                $contents .= "\t" . 'Require ip ' . gethostbyname(trim(substr($whiteListEntry, 5, strlen($whiteListEntry)))) . "\n";
             } else {
                 $contents .= "\t" . 'Require ip ' . trim($whiteListEntry) . "\n";
             }
