@@ -3,15 +3,15 @@
 /* Configuratie voor generate.php */
 
 $SSLDir = '/etc/apache2/certificates/';
-$genericSSLKey = $SSLDir . 'serverXX.key';
-$genericSSLCert = $SSLDir . 'serverXX.crt';
+$genericSSLKey = $SSLDir . 'server-name.key';
+$genericSSLCert = $SSLDir . 'server-name.crt';
 
 $vhostsPath = '/home/%1$s/vhosts';
 $websitePath = '/home/%1$s/vhosts/%2$s';
 
 $apacheVhostDir = '/etc/apache2/sites-available/';
 $vhostFile = 'vhost-users.conf';
-$FPMPoolsFile = '/etc/php5/fpm/pool.d/users.conf';
+$FPMPoolsFile = '/etc/php/7.0/fpm/pool.d/users.conf';
 $FPMMaxChildren = 8;
 
 $vhosts = [

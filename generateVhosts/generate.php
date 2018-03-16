@@ -33,7 +33,7 @@ foreach ($vhosts as $name => $groupConfig) {
 
     $currentVhostPath = sprintf($vhostsPath, $name);
 
-    $contents .= 'FastCGIExternalServer /home/' . $name . '/vhosts/php5.fcgi -socket /var/run/php5-fpm-' . $name . '.sock -pass-header Authorization -idle-timeout 3600 -flush' . "\n";
+    //$contents .= 'FastCGIExternalServer /home/' . $name . '/vhosts/php7.fcgi -socket /var/run/php7-fpm-' . $name . '.sock -pass-header Authorization -idle-timeout 3600 -flush' . "\n";
 
     $contents .= '<Directory ' . $currentVhostPath . '>' . "\n";
     $contents .= "\t" . 'Order Allow,Deny' . "\n";
@@ -78,6 +78,10 @@ foreach ($vhosts as $name => $groupConfig) {
             $customConfig = isset($serverConfig['customConfig']) ? $serverConfig['customConfig'] : [];
             foreach ($ports as $port) {
                     $contents .= '<VirtualHost ' . $IP . ':' . $port . '>' . "\n";
+                    $contents .= '   <FilesMatch ".+\.ph(p[3457]?|t|tml)$">' . "\n";
+                    $contents .= '       SetHandler "proxy:unix:/var/run/php7-fpm-' . $name . '.sock|fcgi://localhost"' . "\n"; 
+                    $contents .= '   </FilesMatch>' . "\n";
+
                     $contents .= "\t" . 'ServerName ' . $serverName . "\n";
                     if (count($aliases) > 0) {
                         $contents .= "\t" . 'ServerAlias ' . implode(' ', $aliases) . "\n";
@@ -107,7 +111,7 @@ foreach ($vhosts as $name => $groupConfig) {
     $FPMContents .= 'user = ' . $name . "\n";
     $FPMContents .= 'group = ' . $name . "\n";
 
-    $FPMContents .= 'listen = /var/run/php5-fpm-' . $name . '.sock' . "\n";
+    $FPMContents .= 'listen = /var/run/php7-fpm-' . $name . '.sock' . "\n";
     $FPMContents .= "listen.owner = www-data\n";
     $FPMContents .= 'listen.group = ' . $name . "\n";
 
@@ -168,10 +172,10 @@ if ($status) {
 }
 
 // FPM restart
-echo 'Restarting PHP5 FPM pools...' . "\n";
-system('sudo service php5-fpm restart', $status);
+echo 'Restarting PHP7.0 FPM pools...' . "\n";
+system('sudo service php7.0-fpm restart', $status);
 if ($status) {
-    throw new Exception('Failed to restart PHP5-FPM.');
+    throw new Exception('Failed to restart PHP7.0-FPM.');
 }
 
 /* REMOVE FILES */

@@ -43,7 +43,7 @@ $vhostDir = sprintf($config['vhostDir'], $username);
 
 // Voer actie uit
 $userInfo = posix_getpwnam($username);
-$db = mysql_connect('localhost', $config['mysqlUsername'], $config['mysqlPassword']);
+$db = mysqli_connect('localhost', $config['mysqlUsername'], $config['mysqlPassword']);
 if ($action == 'add') {
         if ($userInfo) {
                 throw new Exception('User with that name already exists');
@@ -67,8 +67,8 @@ if ($action == 'add') {
         shell_exec('chown ' . $username . ':' . $username . ' -R ' . $vhostDir);
         shell_exec('chmod 750 ' . $vhostDir);
 
-        mysql_query('CREATE USER \'' . $username . '\'@\'%\' IDENTIFIED BY \'' . mysql_real_escape_string($password) . '\'');
-        mysql_query('GRANT ALL PRIVILEGES ON `' . $username . '_%`.* TO \'' . $username . '\'@\'%\'');
+        mysqli_query($db, 'CREATE USER \'' . $username . '\'@\'%\' IDENTIFIED BY \'' . mysqli_real_escape_string($db, $password) . '\'');
+        mysqli_query($db, 'GRANT ALL PRIVILEGES ON `' . $username . '_%`.* TO \'' . $username . '\'@\'%\'');
 
         echo 'User created:' . "\n\n";
         echo "\t" . 'Username: ' . $username . "\n";
@@ -79,7 +79,7 @@ if ($action == 'add') {
         shell_exec('chpasswd < pass.txt');
         unlink('pass.txt');
 
-        mysql_query('SET PASSWORD FOR \'' . $username . '\'@\'%\' = PASSWORD(\'' . mysql_real_escape_string($password) . '\')');
+        mysqli_query($db, 'SET PASSWORD FOR \'' . $username . '\'@\'%\' = PASSWORD(\'' . mysqli_real_escape_string($db, $password) . '\')');
 
         echo 'Password reset:' . "\n\n";
         echo "\t" . 'Username: ' . $username . "\n";
@@ -88,7 +88,7 @@ if ($action == 'add') {
         if (!$userInfo) {
                 throw new Exception('User with that name does not exist');
         }
-        mysql_query('DROP USER \'' . $username . '\'@\'%\'');
+        mysqli_query($db, 'DROP USER \'' . $username . '\'@\'%\'');
         if ($removeDirs) {
                 shell_exec('rm -rf ' . $vhostDir);
                 shell_exec('rm -rf ' . $homedir);
@@ -97,7 +97,7 @@ if ($action == 'add') {
 } else {
         throw new Exception('Invalid action: ' . $action);
 }
-mysql_close($db);
+mysqli_close($db);
 
 function randomPass() {
         $length = mt_rand(7, 12);

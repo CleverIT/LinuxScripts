@@ -28,7 +28,7 @@ iptables -A INPUT -p icmp -j ACCEPT
 iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 
 # Private interface
-iptables -A INPUT -i eth0 -p tcp --dport 22 -s 192.168.211.0/24  -j ACCEPT  # SSH Local range
+iptables -A INPUT -i ens192 -p tcp --dport 22 -s 192.168.211.0/24  -j ACCEPT  # SSH Local range
 
 # Public interface
 #iptables -A INPUT -i eth1 -p tcp --dport 22 -s 192.168.211.0/24  -j ACCEPT  # SSH Local range
