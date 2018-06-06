@@ -175,10 +175,10 @@ if ($status) {
 }
 
 // FPM restart
-echo 'Restarting PHP7.0 FPM pools...' . "\n";
-system('sudo service php7.0-fpm restart', $status);
+echo 'Restarting PHP7.2 FPM pools...' . "\n";
+system('sudo service php7.2-fpm restart', $status);
 if ($status) {
-    throw new Exception('Failed to restart PHP7.0-FPM.');
+    throw new Exception('Failed to restart PHP7.2-FPM.');
 }
 
 /* REMOVE FILES */
