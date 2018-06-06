@@ -92,6 +92,9 @@ foreach ($vhosts as $name => $groupConfig) {
                         $contents .= "\t" . 'SSLEngine on' . "\n";
                         $contents .= "\t" . 'SSLCertificateFile ' . $sslCert . "\n";
                         $contents .= "\t" . 'SSLCertificateKeyFile ' . $sslKey . "\n";
+						if (isset($serverConfig['sslChain'])) {
+							$contents .= "\t" . 'SSLCertificateChainFile ' . $serverConfig['sslChain'] . "\n";
+						}
                     }
                     if (isset($serverConfig['allow'])) {
                         $contents .= "\t" . '<Directory ' . $currentWebsitePath . '>' . "\n";
