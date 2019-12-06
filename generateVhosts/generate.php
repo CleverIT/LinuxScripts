@@ -88,22 +88,26 @@ foreach ($vhosts as $name => $groupConfig) {
                     }
                     $contents .= "\t" . 'DocumentRoot ' . $currentWebsitePath . "\n";
                     $contents .= "\t" . 'Alias /php5.fcgi /home/' . $name . '/vhosts/php5.fcgi' . "\n";
-                    if ($port == 443) {
+                    if ($port != 80) {
                         $contents .= "\t" . 'SSLEngine on' . "\n";
                         $contents .= "\t" . 'SSLCertificateFile ' . $sslCert . "\n";
                         $contents .= "\t" . 'SSLCertificateKeyFile ' . $sslKey . "\n";
-						if (isset($serverConfig['sslChain'])) {
-							$contents .= "\t" . 'SSLCertificateChainFile ' . $serverConfig['sslChain'] . "\n";
-						}
-                    }
+			if (isset($serverConfig['sslChain'])) {
+				$contents .= "\t" . 'SSLCertificateChainFile ' . $serverConfig['sslChain'] . "\n";
+			}
+                    	foreach ($customConfig as $customLine) {
+                        	$contents .= "\t" . trim($customLine) . "\n";
+                    	}
+                    } else if ($serverConfig['forceSSL'] && $serverConfig['forceSSL']) {
+		    	$contents .= "\t" . 'RewriteEngine On' . "\n";
+		    	$contents .= "\t" . 'RewriteCond %{HTTPS} !=on' . "\n";
+		    	$contents .= "\t" . 'RewriteRule ^/?(.*) https://%{SERVER_NAME}/$1 [R,L]' . "\n";
+		    }
                     if (isset($serverConfig['allow'])) {
                         $contents .= "\t" . '<Directory ' . $currentWebsitePath . '>' . "\n";
                         $contents .= "\t\t" . 'Order Allow,Deny' . "\n";
                         $contents .= "\t\t" . 'Allow from ' . $serverConfig['allow'] . "\n";
                         $contents .= "\t" . '</Directory>' . "\n";
-                    }
-                    foreach ($customConfig as $customLine) {
-                        $contents .= "\t" . trim($customLine) . "\n";
                     }
                     $contents .= '</VirtualHost>' . "\n";
             }
@@ -175,8 +179,8 @@ if ($status) {
 }
 
 // FPM restart
-echo 'Restarting PHP7.2 FPM pools...' . "\n";
-system('sudo service php7.2-fpm restart', $status);
+echo 'Restarting PHP7.4 FPM pools...' . "\n";
+system('sudo service php7.4-fpm restart', $status);
 if ($status) {
     throw new Exception('Failed to restart PHP7.2-FPM.');
 }

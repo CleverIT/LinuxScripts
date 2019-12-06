@@ -28,7 +28,9 @@ $vhosts = [
             //  'allow' => '192.168.0.0/24', 
             //  'sslCert' => '/path/to/ssl.crt',
             //  'sslKey' => '/path/to/ssl.key',
+            //  'forceSSL' => true,
             //  'customConfig' => [
+            //      'Include /etc/letsencrypt/options-ssl-apache.conf',
             //      'RewriteEngine On',
             //      'RewriteRule ...',
             //  ],
