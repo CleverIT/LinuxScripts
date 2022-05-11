@@ -17,7 +17,7 @@ then
         err=1
 fi
 
-apt-get -y upgrade
+apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" upgrade
 if [[ $? > 0 ]]
 then
         err=1
