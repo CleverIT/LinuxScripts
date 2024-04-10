@@ -40,3 +40,9 @@ iptables -A INPUT -i ens192 -p tcp --dport 22 -s 192.168.211.0/24  -j ACCEPT  # 
 ###
 
 # No rules for outbound packets
+
+# Restart Docker if it was running, since it needs to re-add its rules after the flush
+if pidof -q dockerd && command -v systemctl >/dev/null; then
+    echo 'Restarting Docker...'
+    systemctl restart docker
+fi

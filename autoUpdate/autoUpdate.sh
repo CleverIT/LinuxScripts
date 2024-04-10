@@ -1,7 +1,10 @@
 #!/bin/bash
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
 
-../firewall/firewall-enable
+# If the INPUT chain is empty, enable the firewall
+if ! iptables --list-rules INPUT | grep -q -v -E '^-P'; then
+    ../firewall/firewall-enable
+fi
 
 #Server zonder spaties
 servert=$HOSTNAME
@@ -14,19 +17,19 @@ from="autoUpdate-"$servert"@cleverit.nl"
 apt-get update
 if [[ $? > 0 ]]
 then
-        err=1
+    err=1
 fi
 
 apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" upgrade
 if [[ $? > 0 ]]
 then
-        err=1
+    err=1
 fi
 
 apt-get autoclean
 if [[ $? > 0 ]]
 then
-        err=1
+    err=1
 fi
 
 if [[ $err > 0 ]]
