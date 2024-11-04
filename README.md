@@ -9,3 +9,6 @@ generateVhosts:
 
 userTools:
 	Create user with MySql and default folders
+
+vmware:
+	Scripts for VMware (hotadd, resize disk)

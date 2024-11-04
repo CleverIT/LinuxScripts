@@ -1,9 +1,0 @@
-<?php
-
-$config = array(
-    'defaultGroups' => ['users'],
-    'mysqlUsername' => 'root',
-    'mysqlPassword' => '',
-    'userDir'       => '/home/%1$s/',
-    'vhostDir'      => '/home/%1$s/vhosts/',
-);
