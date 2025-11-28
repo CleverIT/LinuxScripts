@@ -1,2 +1,4 @@
 /firewall/firewall-enable
-
+/autoUpdate/email.txt
+/autoUpdate/package_tracking.db
+/.idea
