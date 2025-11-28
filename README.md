@@ -30,9 +30,9 @@ To spread load and avoid all servers updating at the same time, use random hours
 Generate random cron lines for this server:
 ```bash
 TRACK_MIN=$((RANDOM % 60))
-TRACK_HOUR=$((RANDOM % 3))        # 0-2 AM
+TRACK_HOUR=$((RANDOM % 2))        # 0-1 AM
 UPDATE_MIN=$((RANDOM % 60))
-UPDATE_HOUR=$((3 + RANDOM % 3))   # 3-5 AM
+UPDATE_HOUR=$((2 + RANDOM % 3))   # 2-4 AM
 
 echo "# AutoUpdate - track and delayed update"
 echo "$TRACK_MIN $TRACK_HOUR * * * /path/to/autoUpdate/autoUpdate.sh --track >> /var/log/autoupdate-track.log 2>&1"
@@ -42,12 +42,12 @@ echo "$UPDATE_MIN $UPDATE_HOUR * * * /path/to/autoUpdate/autoUpdate.sh --delayed
 Add the output to root's crontab with `sudo crontab -e`:
 ```cron
 # AutoUpdate - track and delayed update
-23 1 * * * /opt/LinuxScripts/autoUpdate/autoUpdate.sh --track >> /var/log/autoupdate-track.log 2>&1
-47 4 * * * /opt/LinuxScripts/autoUpdate/autoUpdate.sh --delayed >> /var/log/autoupdate.log 2>&1
+23 0 * * * /opt/LinuxScripts/autoUpdate/autoUpdate.sh --track >> /var/log/autoupdate-track.log 2>&1
+47 3 * * * /opt/LinuxScripts/autoUpdate/autoUpdate.sh --delayed >> /var/log/autoupdate.log 2>&1
 ```
 
 This ensures:
-- Tracking runs daily at a random time between 0:00-2:59 AM
-- Updates install daily at a random time between 3:00-5:59 AM
+- Tracking runs daily at a random time between 0:00-1:59 AM
+- Updates install daily at a random time between 2:00-4:59 AM
 - Only packages that have been available for 3+ days are installed
 - Packages on hold (`apt-mark hold`) are skipped
