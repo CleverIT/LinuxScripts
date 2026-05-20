@@ -2,14 +2,30 @@
 # Gemaakt door MC, vraag hem voor meer info!
 set -e
 
-if [[ $# -ne 2 ]] ; then
+if ! command -v parted >/dev/null 2>&1; then
+    echo "parted is niet geinstalleerd. Bezig met installeren..."
+    apt install -y parted
+fi
+
+if [[ $# -eq 0 ]] ; then
+    echo -e '\e[1;33mGeen argumenten opgegeven.\e[0m'
+    read -p "Mag ik /dev/sda 3 aannemen? [Y/n] " ANSWER
+    ANSWER=${ANSWER:-Y}
+    if [[ ! "$ANSWER" =~ ^[Yy]$ ]] ; then
+        echo -e '\e[1;33mUSAGE: resize.sh [DEVICE] [PARTITIONNUMBER]'
+        echo -e "ie: resize.sh /dev/sda 3\e[0m"
+        exit 1
+    fi
+    DEVICE=/dev/sda
+    PARTNR=3
+elif [[ $# -ne 2 ]] ; then
     echo -e '\e[1;33mUSAGE: resize.sh [DEVICE] [PARTITIONNUMBER]'
     echo -e "ie: resize.sh /dev/sda 3\e[0m"
     exit 1
+else
+    DEVICE=$1
+    PARTNR=$2
 fi
-
-DEVICE=$1
-PARTNR=$2
 
 echo "Dit script gaat nu ${DEVICE}${PARTNR} vergoten naar de rest van de disk"
 echo "Misschien snapshot maken, gebruik op eigen risico!"

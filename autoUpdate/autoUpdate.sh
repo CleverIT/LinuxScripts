@@ -6,13 +6,45 @@ PATH=/usr/bin:/bin:/usr/sbin:/sbin
 #   ./autoUpdate.sh --track         Track new updates (run daily via cron)
 #   ./autoUpdate.sh --delayed       Install only aged packages (3+ days old)
 #   ./autoUpdate.sh                 Original behavior: install all updates immediately
+#
+# Logging: all output is captured in ../logs/updatelog.log. The previous log is
+# rotated to ../logs/updatelog.YYYYMMDD.log on each run (date from its mtime);
+# rotated logs older than 30 days are deleted.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRACKING_FILE="${SCRIPT_DIR}/package_tracking.db"
+LOG_DIR="${SCRIPT_DIR}/../logs"
+LOG_FILE="${LOG_DIR}/updatelog.log"
+LOG_RETENTION_DAYS=30
 MIN_AGE_DAYS=3
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+rotate_log() {
+    mkdir -p "$LOG_DIR"
+    if [[ -s "$LOG_FILE" ]]; then
+        local mtime stamp
+        mtime=$(stat -c %Y "$LOG_FILE" 2>/dev/null)
+        if [[ -n "$mtime" ]]; then
+            stamp=$(date -d "@$mtime" '+%Y%m%d')
+        else
+            stamp=$(date '+%Y%m%d')
+        fi
+        mv "$LOG_FILE" "${LOG_FILE%.log}.${stamp}.log"
+    fi
+    find "$LOG_DIR" -maxdepth 1 -name 'updatelog.*.log' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null
+}
+
+rotate_log
+exec > "$LOG_FILE" 2>&1
+
+log "autoUpdate.sh starting (args: ${*:-<none>})"
 
 # If the INPUT chain is empty, enable the firewall
 if ! iptables --list-rules INPUT | grep -q -v -E '^-P'; then
+    log "INPUT chain empty - enabling firewall"
     ../firewall/firewall-enable
 fi
 
@@ -50,7 +82,7 @@ get_upgradable_packages() {
 
 # Function to track new packages
 track_packages() {
-    echo "Tracking package updates..."
+    log "Tracking package updates"
     local today=$(date +%Y-%m-%d)
     local updated=0
     local new_packages=0
@@ -86,7 +118,7 @@ track_packages() {
     # Replace tracking file (removes old entries for packages no longer upgradable)
     mv "$temp_file" "$TRACKING_FILE"
 
-    echo "Tracking complete: $updated packages tracked, $new_packages new"
+    log "Tracking complete: $updated packages tracked, $new_packages new"
 }
 
 # Function to get packages eligible for delayed update
@@ -142,13 +174,15 @@ get_eligible_packages() {
 
 # Function to perform delayed update
 delayed_update() {
-    echo "Performing delayed update (min age: $MIN_AGE_DAYS days)..."
+    log "Performing delayed update (min age: $MIN_AGE_DAYS days)"
 
     if [[ ! -f "$TRACKING_FILE" ]]; then
-        echo "ERROR: No tracking file found. Run with --track first."
+        log "ERROR: No tracking file found. Run with --track first."
+        err=1
         return 1
     fi
 
+    log "Running apt-get update"
     apt-get update
     if [[ $? -gt 0 ]]; then
         err=1
@@ -158,16 +192,17 @@ delayed_update() {
     eligible=$(echo "$eligible" | xargs)  # Trim whitespace
 
     if [[ -z "$eligible" ]]; then
-        echo "No packages eligible for update yet."
+        log "No packages eligible for update yet."
         return 0
     fi
 
-    echo "Installing eligible packages: $eligible"
+    log "Installing eligible packages: $eligible"
     apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install $eligible
     if [[ $? -gt 0 ]]; then
         err=1
     fi
 
+    log "Running apt-get autoclean"
     apt-get autoclean
     if [[ $? -gt 0 ]]; then
         err=1
@@ -179,16 +214,21 @@ delayed_update() {
 
 # Function to perform immediate update (original behavior)
 immediate_update() {
+    log "Performing immediate update"
+
+    log "Running apt-get update"
     apt-get update
     if [[ $? -gt 0 ]]; then
         err=1
     fi
 
+    log "Running apt-get upgrade"
     apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" upgrade
     if [[ $? -gt 0 ]]; then
         err=1
     fi
 
+    log "Running apt-get autoclean"
     apt-get autoclean
     if [[ $? -gt 0 ]]; then
         err=1
@@ -198,6 +238,7 @@ immediate_update() {
 # Main logic based on arguments
 case "${1:-}" in
     --track|-t)
+        log "Running apt-get update (pre-track)"
         apt-get update
         track_packages
         exit 0
@@ -206,12 +247,12 @@ case "${1:-}" in
         delayed_update
         ;;
     --status|-s)
-        echo "Package tracking status (min age: $MIN_AGE_DAYS days):"
+        log "Package tracking status (min age: $MIN_AGE_DAYS days):"
         if [[ -f "$TRACKING_FILE" ]]; then
             apt-get update >/dev/null 2>&1
             get_eligible_packages >/dev/null
         else
-            echo "No tracking file. Run --track first."
+            log "No tracking file. Run --track first."
         fi
         exit 0
         ;;
@@ -228,7 +269,7 @@ case "${1:-}" in
         immediate_update
         ;;
     *)
-        echo "Unknown option: $1"
+        log "Unknown option: $1"
         echo "Use --help for usage information"
         exit 1
         ;;
@@ -246,5 +287,16 @@ fi
 
 cat /etc/*-release >> ./email.txt
 
-cat ./updatelog.log >> ./email.txt
-cat ./email.txt | mail -aFrom:"autoUpdate-"$servert"@cleverit.nl" -s "$subject" backup@cleverit.nl
+cat "$LOG_FILE" >> ./email.txt
+
+log "Sending status email: subject=\"$subject\" to=backup@cleverit.nl"
+mail_output=$(mail -aFrom:"autoUpdate-${servert}@cleverit.nl" -s "$subject" backup@cleverit.nl < ./email.txt 2>&1)
+mail_status=$?
+if [[ -n "$mail_output" ]]; then
+    log "mail output: $mail_output"
+fi
+if [[ $mail_status -eq 0 ]]; then
+    log "mail command exit 0 - message queued to local MTA"
+else
+    log "mail command exit $mail_status - message NOT queued"
+fi

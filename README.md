@@ -35,19 +35,32 @@ UPDATE_MIN=$((RANDOM % 60))
 UPDATE_HOUR=$((2 + RANDOM % 3))   # 2-4 AM
 
 echo "# AutoUpdate - track and delayed update"
-echo "$TRACK_MIN $TRACK_HOUR * * * /path/to/autoUpdate/autoUpdate.sh --track >> /var/log/autoupdate-track.log 2>&1"
-echo "$UPDATE_MIN $UPDATE_HOUR * * * /path/to/autoUpdate/autoUpdate.sh --delayed >> /var/log/autoupdate.log 2>&1"
+echo "$TRACK_MIN $TRACK_HOUR * * * cd /opt/LinuxScripts/autoUpdate && ./autoUpdate.sh --track"
+echo "$UPDATE_MIN $UPDATE_HOUR * * * cd /opt/LinuxScripts/autoUpdate && ./autoUpdate.sh --delayed"
 ```
 
 Add the output to root's crontab with `sudo crontab -e`:
 ```cron
 # AutoUpdate - track and delayed update
-23 0 * * * /opt/LinuxScripts/autoUpdate/autoUpdate.sh --track >> /var/log/autoupdate-track.log 2>&1
-47 3 * * * /opt/LinuxScripts/autoUpdate/autoUpdate.sh --delayed >> /var/log/autoupdate.log 2>&1
+23 0 * * * cd /opt/LinuxScripts/autoUpdate && ./autoUpdate.sh --track
+47 3 * * * cd /opt/LinuxScripts/autoUpdate && ./autoUpdate.sh --delayed
 ```
+
+The script handles its own logging to `../logs/updatelog.log` (rotated to `updatelog.YYYYMMDD.log`, 30 day retention), so no shell redirect is needed in the cron line.
 
 This ensures:
 - Tracking runs daily at a random time between 0:00-1:59 AM
 - Updates install daily at a random time between 2:00-4:59 AM
 - Only packages that have been available for 3+ days are installed
 - Packages on hold (`apt-mark hold`) are skipped
+
+### Deployment via the basic-debian Ansible playbook
+
+On Clever Debian machines this script is rolled out by the `basic-debian` playbook. The relevant pieces:
+
+- `mailutils` is installed as a prerequisite so the script can send its status mail.
+- The repository is cloned to `/root/LinuxScripts` with `ansible.builtin.git` (`update: false` so local edits to `firewall-enable` and similar are preserved).
+- Two cron jobs are created per host with `ansible.builtin.cron`, using `{{ 60 | random }}` / `{{ 2 | random }}` / `{{ 5 | random(start=2) }}` so each server picks its own random minute and hour:
+  - `autoUpdate-track`: `cd /root/LinuxScripts/autoUpdate && ./autoUpdate.sh --track` between 0:00–1:59
+  - `autoUpdate-delayed`: `cd /root/LinuxScripts/autoUpdate && ./autoUpdate.sh --delayed` between 2:00–4:59
+- A legacy `autoUpdate` cron entry is removed with `state: absent`.
