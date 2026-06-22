@@ -289,6 +289,13 @@ cat /etc/*-release >> ./email.txt
 
 cat "$LOG_FILE" >> ./email.txt
 
+# Strip carriage returns from the body. apt/dpkg progress output embeds bare
+# CR characters (e.g. "Reading database ... 5%\r10%\r..."), which modern
+# sendmail rejects with "421 4.5.0 Bare carriage return (CR) not allowed",
+# leaving the message stuck forever in the MSP queue. First drop trailing CRs
+# (CRLF -> LF), then collapse in-line progress bars to their final state.
+sed -i 's/\r$//; s/.*\r//' ./email.txt
+
 log "Sending status email: subject=\"$subject\" to=backup@cleverit.nl"
 mail_output=$(mail -aFrom:"autoUpdate-${servert}@cleverit.nl" -s "$subject" backup@cleverit.nl < ./email.txt 2>&1)
 mail_status=$?
