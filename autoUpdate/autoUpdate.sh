@@ -202,6 +202,12 @@ delayed_update() {
         err=1
     fi
 
+    log "Running apt-get autoremove --purge"
+    apt-get -y --purge autoremove
+    if [[ $? -gt 0 ]]; then
+        err=1
+    fi
+
     log "Running apt-get autoclean"
     apt-get autoclean
     if [[ $? -gt 0 ]]; then
@@ -224,6 +230,12 @@ immediate_update() {
 
     log "Running apt-get upgrade"
     apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" upgrade
+    if [[ $? -gt 0 ]]; then
+        err=1
+    fi
+
+    log "Running apt-get autoremove --purge"
+    apt-get -y --purge autoremove
     if [[ $? -gt 0 ]]; then
         err=1
     fi
