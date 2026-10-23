@@ -20,6 +20,7 @@ The autoUpdate script supports delayed updates to avoid installing packages imme
 ./autoUpdate.sh --track      # Track new updates (records first-seen date)
 ./autoUpdate.sh --delayed    # Install only packages aged 3+ days
 ./autoUpdate.sh --status     # Show status of tracked packages
+./autoUpdate.sh --gitlab-critical  # Install GitLab now, only on a critical security release
 ./autoUpdate.sh              # Original behavior: install all updates immediately
 ```
 
@@ -53,6 +54,28 @@ This ensures:
 - Updates install daily at a random time between 2:00-4:59 AM
 - Only packages that have been available for 3+ days are installed
 - Packages on hold (`apt-mark hold`) are skipped
+
+### Critical GitLab releases
+
+On a server with `gitlab-ee` or `gitlab-ce` the script asks GitLab's own version check
+(`https://version.gitlab.com/check.json`, the same source as the "critical security release"
+banner admins see) whether the installed version has a critical vulnerability. Only the version
+number is sent.
+
+- `--delayed`: a critical GitLab release is installed right away instead of after 3 days.
+- `--gitlab-critical`: for servers that update weekly. Run it on the other nights; it installs
+  only the GitLab package, and only when the check says critical and a newer package is in apt.
+  Nothing to do = no mail; the check logs to `../logs/gitlab-critical.log`.
+- Guards: no newer package in apt yet → try again next night; package on hold → skipped; less
+  than 5 GB free on `/var/opt/gitlab` (GitLab backs up before upgrading) → not updated, error
+  mail; version check unreachable 3 nights in a row → one error mail.
+- The mail subject ends with "(kritieke GitLab-update)".
+
+Weekly GitLab server (update on Wednesday, critical GitLab releases the next night):
+```cron
+29 2 * * 3 cd /root/LinuxScripts/autoUpdate && ./autoUpdate.sh
+29 2 * * 0,1,2,4,5,6 cd /root/LinuxScripts/autoUpdate && ./autoUpdate.sh --gitlab-critical
+```
 
 ### Deployment via the basic-debian Ansible playbook
 

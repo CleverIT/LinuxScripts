@@ -5,6 +5,8 @@ PATH=/usr/bin:/bin:/usr/sbin:/sbin
 # Usage:
 #   ./autoUpdate.sh --track         Track new updates (run daily via cron)
 #   ./autoUpdate.sh --delayed       Install only aged packages (3+ days old)
+#   ./autoUpdate.sh --gitlab-critical  Install GitLab now, but only if GitLab reports a
+#                                   critical vulnerability for the installed version
 #   ./autoUpdate.sh                 Original behavior: install all updates immediately
 #
 # Logging: all output is captured in ../logs/updatelog.log. The previous log is
@@ -17,6 +19,12 @@ LOG_DIR="${SCRIPT_DIR}/../logs"
 LOG_FILE="${LOG_DIR}/updatelog.log"
 LOG_RETENTION_DAYS=30
 MIN_AGE_DAYS=3
+GITLAB_VERSION_FILE=/opt/gitlab/embedded/service/gitlab-rails/VERSION
+GITLAB_CHECK_URL="https://version.gitlab.com/check.json"
+GITLAB_CHECK_LOG="${LOG_DIR}/gitlab-critical.log"
+GITLAB_FAILS_FILE="${SCRIPT_DIR}/gitlab_check_fails"
+GITLAB_MIN_FREE_GB=5
+critical_reason=""
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
@@ -36,6 +44,76 @@ rotate_log() {
     fi
     find "$LOG_DIR" -maxdepth 1 -name 'updatelog.*.log' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null
 }
+
+# GitLab critical security releases
+# GitLab's version check (the same source as the "critical security release" banner
+# for admins) says whether the installed version has a critical vulnerability. If it
+# does and a newer gitlab-ee/gitlab-ce is in apt, that package is installed right
+# away: on weekly servers via --gitlab-critical, on daily servers past the delay.
+gitlab_package() {
+    dpkg-query -W -f='${Package} ${db:Status-Status}\n' gitlab-ee gitlab-ce 2>/dev/null | awk '$2=="installed"{print $1; exit}'
+}
+
+# Prints the GitLab package to install now, or nothing. Logs to stderr.
+# Exit 2 when the version check could not be reached.
+gitlab_critical_package() {
+    local pkg version info answer
+    pkg=$(gitlab_package)
+    [[ -z "$pkg" || ! -f "$GITLAB_VERSION_FILE" ]] && return 0
+    version=$(cat "$GITLAB_VERSION_FILE")
+    info=$(printf '{"version":"%s"}' "$version" | base64 -w0)
+    if ! answer=$(curl -fsS -m 30 -A "LinuxScripts-autoUpdate" "${GITLAB_CHECK_URL}?gitlab_info=${info}" 2>&1); then
+        echo "  GitLab version check failed: $answer" >&2
+        return 2
+    fi
+    if ! echo "$answer" | grep -q '"critical_vulnerability":true'; then
+        echo "  GitLab $version: no critical vulnerability" >&2
+        return 0
+    fi
+    if apt-mark showhold 2>/dev/null | grep -qx "$pkg"; then
+        echo "  GitLab $version: CRITICAL, but $pkg is on hold" >&2
+        return 0
+    fi
+    if ! apt list --upgradable 2>/dev/null | grep -q "^${pkg}/"; then
+        echo "  GitLab $version: CRITICAL, but no newer $pkg in apt yet" >&2
+        return 0
+    fi
+    echo "  GitLab $version: CRITICAL, installing $pkg now ($answer)" >&2
+    echo "$pkg"
+}
+
+# GitLab makes a backup before it upgrades; make sure that fits.
+gitlab_disk_ok() {
+    local free_gb
+    free_gb=$(df --output=avail -BG /var/opt/gitlab 2>/dev/null | tail -1 | tr -dc 0-9)
+    if [[ -n "$free_gb" && "$free_gb" -lt "$GITLAB_MIN_FREE_GB" ]]; then
+        log "ERROR: only ${free_gb} GB free on /var/opt/gitlab (need ${GITLAB_MIN_FREE_GB}), GitLab not updated"
+        return 1
+    fi
+    return 0
+}
+
+# --gitlab-critical: check quietly (own log, no mail) and only carry on to the
+# normal logging and mail when there is something to install or to report.
+if [[ "${1:-}" == "--gitlab-critical" ]]; then
+    mkdir -p "$LOG_DIR"
+    {
+        log "GitLab critical check"
+        apt-get update >/dev/null 2>&1
+        gitlab_pkg=$(gitlab_critical_package)
+        check_status=$?
+    } >> "$GITLAB_CHECK_LOG" 2>&1
+    if [[ $check_status -eq 2 ]]; then
+        fails=$(( $(cat "$GITLAB_FAILS_FILE" 2>/dev/null || echo 0) + 1 ))
+        echo "$fails" > "$GITLAB_FAILS_FILE"
+        # report once, on the third night in a row
+        [[ $fails -ne 3 ]] && exit 0
+        gitlab_check_broken=1
+    else
+        rm -f "$GITLAB_FAILS_FILE"
+        [[ -z "$gitlab_pkg" ]] && exit 0
+    fi
+fi
 
 rotate_log
 exec > "$LOG_FILE" 2>&1
@@ -191,6 +269,17 @@ delayed_update() {
     local eligible=$(get_eligible_packages)
     eligible=$(echo "$eligible" | xargs)  # Trim whitespace
 
+    # A critical GitLab release does not wait for the delay
+    local gitlab_pkg=$(gitlab_critical_package)
+    if [[ -n "$gitlab_pkg" ]] && ! echo " $eligible " | grep -q " $gitlab_pkg "; then
+        if gitlab_disk_ok; then
+            eligible=$(echo "$eligible $gitlab_pkg" | xargs)
+            critical_reason="kritieke GitLab-update"
+        else
+            err=1
+        fi
+    fi
+
     if [[ -z "$eligible" ]]; then
         log "No packages eligible for update yet."
         return 0
@@ -247,8 +336,28 @@ immediate_update() {
     fi
 }
 
+# Install only the GitLab package (checked before the log rotation above)
+gitlab_critical_update() {
+    if [[ -n "${gitlab_check_broken:-}" ]]; then
+        log "ERROR: GitLab version check failed 3 nights in a row, see $GITLAB_CHECK_LOG"
+        err=1
+        return 1
+    fi
+    log "Critical GitLab release: installing $gitlab_pkg"
+    critical_reason="kritieke GitLab-update"
+    gitlab_disk_ok || { err=1; return 1; }
+    apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install "$gitlab_pkg"
+    if [[ $? -gt 0 ]]; then
+        err=1
+    fi
+    log "Installed: $(cat "$GITLAB_VERSION_FILE" 2>/dev/null)"
+}
+
 # Main logic based on arguments
 case "${1:-}" in
+    --gitlab-critical)
+        gitlab_critical_update
+        ;;
     --track|-t)
         log "Running apt-get update (pre-track)"
         apt-get update
@@ -273,6 +382,8 @@ case "${1:-}" in
         echo "  --track, -t     Track new package updates (run daily)"
         echo "  --delayed, -d   Install only packages aged $MIN_AGE_DAYS+ days"
         echo "  --status, -s    Show status of tracked packages"
+        echo "  --gitlab-critical  Install GitLab now if it reports a critical vulnerability"
+        echo "                  (for servers on a weekly schedule; quiet when nothing to do)"
         echo "  --help, -h      Show this help"
         echo "  (no option)     Original behavior: install all updates immediately"
         exit 0
@@ -295,6 +406,10 @@ else
     subject="HOERA - Linux autoUpdate voor server: $servert is succesvol!!!"
     echo "HOERA het is GOED!!!" > ./email.txt
     echo "Server: $servert" >> ./email.txt
+fi
+
+if [[ -n "$critical_reason" ]]; then
+    subject="$subject ($critical_reason)"
 fi
 
 cat /etc/*-release >> ./email.txt
