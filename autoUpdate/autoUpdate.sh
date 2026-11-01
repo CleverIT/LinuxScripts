@@ -5,7 +5,14 @@ PATH=/usr/bin:/bin:/usr/sbin:/sbin
 # Usage:
 #   ./autoUpdate.sh --track         Track new updates (run daily via cron)
 #   ./autoUpdate.sh --delayed       Install only aged packages (3+ days old)
+#   ./autoUpdate.sh --self-update   Update this repository (git pull --ff-only); also done by --track
 #   ./autoUpdate.sh                 Original behavior: install all updates immediately
+#
+# After an update run the script also checks the kernel and the package state
+# (see post_update_checks): a missing kernel metapackage, half-installed
+# packages, too little room in /boot, or a server that still runs an older
+# kernel than the newest installed one. Optional settings go in autoUpdate.conf
+# next to this script (not in git); see autoUpdate.conf.example.
 #
 # Logging: all output is captured in ../logs/updatelog.log. The previous log is
 # rotated to ../logs/updatelog.YYYYMMDD.log on each run (date from its mtime);
@@ -17,6 +24,20 @@ LOG_DIR="${SCRIPT_DIR}/../logs"
 LOG_FILE="${LOG_DIR}/updatelog.log"
 LOG_RETENTION_DAYS=30
 MIN_AGE_DAYS=3
+REBOOT_STATE_FILE="${SCRIPT_DIR}/reboot_required_since"
+SELF_UPDATE_STATE_FILE="${SCRIPT_DIR}/self_update_status"
+
+# Defaults, override in autoUpdate.conf
+AUTO_REBOOT=yes                     # reboot after the nightly --delayed run when a reboot is needed
+AUTO_REBOOT_WEEKDAYS="1 2 3 4 5 6 7" # days (date +%u, 1=Monday) on which AUTO_REBOOT may reboot
+REBOOT_ALERT_DAYS=8                 # reboot pending this many days -> status mail becomes ERROR
+BOOT_MIN_FREE_MB=80                 # less free space on a separate /boot -> ERROR (a kernel needs ~55 MB)
+SELF_UPDATE=yes                     # --track first runs git pull --ff-only on this repository
+
+if [[ -f "${SCRIPT_DIR}/autoUpdate.conf" ]]; then
+    # shellcheck source=/dev/null
+    . "${SCRIPT_DIR}/autoUpdate.conf"
+fi
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
@@ -52,6 +73,7 @@ fi
 servert=$HOSTNAME
 
 err=0
+run_mode=""
 subject=""
 from="autoUpdate-"$servert"@cleverit.nl"
 
@@ -218,6 +240,153 @@ delayed_update() {
     track_packages
 }
 
+script_version() {
+    git -C "$SCRIPT_DIR" log -1 --format='%h (%cd)' --date=short 2>/dev/null || echo "unknown (no git checkout)"
+}
+
+# Keep this repository (and so this script) up to date. Runs from --track, a
+# few hours before --delayed, so the update run already uses the new version.
+# Local files like firewall/firewall-enable and the state files are in
+# .gitignore, so a fast-forward pull leaves them alone. The result is written
+# to SELF_UPDATE_STATE_FILE and reported in the next status mail.
+self_update() {
+    if [[ "$SELF_UPDATE" != "yes" ]]; then
+        log "Self-update disabled (SELF_UPDATE=$SELF_UPDATE)"
+        rm -f "$SELF_UPDATE_STATE_FILE"
+        return 0
+    fi
+    if ! git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        log "Self-update skipped: $SCRIPT_DIR is not a git checkout"
+        return 0
+    fi
+    local before after out
+    before=$(script_version)
+    if out=$(GIT_TERMINAL_PROMPT=0 timeout 120 git -C "$SCRIPT_DIR" pull --ff-only --quiet 2>&1); then
+        after=$(script_version)
+        if [[ "$before" != "$after" ]]; then
+            log "Self-update: $before -> $after"
+        else
+            log "Self-update: already up to date, $after"
+        fi
+        echo "OK $(date +%Y-%m-%d) $after" > "$SELF_UPDATE_STATE_FILE"
+    else
+        log "ERROR: self-update failed (git pull --ff-only): $out"
+        echo "FAILED $(date +%Y-%m-%d) $(echo "$out" | tr '\n' ' ')" > "$SELF_UPDATE_STATE_FILE"
+        return 1
+    fi
+}
+
+# Report the result of the last self-update in the update run.
+check_self_update() {
+    log "Script version: $(script_version)"
+    [[ "$SELF_UPDATE" == "yes" && -f "$SELF_UPDATE_STATE_FILE" ]] || return 0
+    local state
+    state=$(head -n 1 "$SELF_UPDATE_STATE_FILE")
+    if [[ "$state" == FAILED* ]]; then
+        log "ERROR: last self-update failed: ${state#FAILED }"
+        err=1
+    else
+        log "Last self-update: ${state#OK }"
+    fi
+}
+
+# Is there a real kernel on this machine (not a container)?
+has_own_kernel() {
+    if command -v systemd-detect-virt >/dev/null 2>&1 && systemd-detect-virt --container --quiet; then
+        return 1
+    fi
+    find /boot -maxdepth 1 -type f -name 'vmlinuz-*' 2>/dev/null | grep -q .
+}
+
+# Kernel metapackages (linux-image-amd64, linux-image-cloud-amd64, linux-image-generic,
+# linux-generic, ...) pull in each new kernel ABI. Without one, apt never offers a new
+# kernel again and the server silently stays on an old one.
+installed_kernel_metapackages() {
+    dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 2>/dev/null \
+        | awk '$1 ~ /^ii/ {print $2}' \
+        | grep -E '^linux-image-[a-z]|^linux-(generic|virtual|aws|azure|gcp|kvm|oracle|oem)' \
+        | grep -vE '^linux-image-(unsigned-|extra-)|-dbg(sym)?$'
+}
+
+newest_installed_kernel() {
+    find /boot -maxdepth 1 -type f -name 'vmlinuz-*' -printf '%f\n' 2>/dev/null \
+        | sed 's/^vmlinuz-//' | sort -V | tail -n 1
+}
+
+# Checks after an update run. Sets err=1 for problems that need a person, and
+# reboot_needed=1 when the running kernel (or a library) is older than installed.
+reboot_needed=0
+reboot_reason=""
+post_update_checks() {
+    log "Post-update checks"
+    check_self_update
+
+    local audit
+    audit=$(dpkg --audit 2>&1)
+    if [[ -n "$audit" ]]; then
+        log "ERROR: dpkg reports half-installed or unconfigured packages:"
+        echo "$audit"
+        err=1
+    fi
+
+    if ! has_own_kernel; then
+        log "No kernel in /boot (container?) - skipping kernel checks"
+        return 0
+    fi
+
+    local metas
+    metas=$(installed_kernel_metapackages | xargs)
+    if [[ -z "$metas" ]]; then
+        log "ERROR: no kernel metapackage installed (e.g. linux-image-amd64): new kernels will never be installed. Fix: apt-get install linux-image-amd64 (or the flavour for this machine)"
+        err=1
+    else
+        log "Kernel metapackage(s): $metas"
+    fi
+
+    if mountpoint -q /boot; then
+        local free_mb
+        free_mb=$(df -Pm /boot | awk 'NR==2 {print $4}')
+        if [[ -n "$free_mb" && "$free_mb" -lt "$BOOT_MIN_FREE_MB" ]]; then
+            log "ERROR: only ${free_mb} MB free in /boot (minimum ${BOOT_MIN_FREE_MB} MB): the next kernel will not fit. Remove old kernels (apt-get --purge autoremove)"
+            err=1
+        else
+            log "/boot free: ${free_mb} MB"
+        fi
+    fi
+
+    local running newest
+    running=$(uname -r)
+    newest=$(newest_installed_kernel)
+    if [[ -n "$newest" && "$running" != "$newest" ]]; then
+        reboot_needed=1
+        reboot_reason="running kernel $running, newest installed $newest"
+    elif [[ -f /run/reboot-required ]]; then
+        reboot_needed=1
+        reboot_reason="/run/reboot-required: $(xargs < /run/reboot-required.pkgs 2>/dev/null)"
+    fi
+
+    if [[ $reboot_needed -eq 1 ]]; then
+        local today since since_epoch days
+        today=$(date +%Y-%m-%d)
+        [[ -s "$REBOOT_STATE_FILE" ]] || echo "$today" > "$REBOOT_STATE_FILE"
+        since=$(head -n 1 "$REBOOT_STATE_FILE")
+        since_epoch=$(date -d "$since" +%s 2>/dev/null || date +%s)
+        days=$(( ($(date +%s) - since_epoch) / 86400 ))
+        log "Reboot needed since $since ($days days): $reboot_reason"
+        if [[ $days -ge $REBOOT_ALERT_DAYS ]]; then
+            if [[ "$AUTO_REBOOT" == "yes" ]]; then
+                log "ERROR: reboot pending for $days days (limit $REBOOT_ALERT_DAYS) although AUTO_REBOOT is on: check why the reboot does not happen or does not help (boot order, /boot)"
+            else
+                log "ERROR: reboot pending for $days days (limit $REBOOT_ALERT_DAYS) and AUTO_REBOOT is off: please reboot this server"
+            fi
+            err=1
+        fi
+    else
+        rm -f "$REBOOT_STATE_FILE"
+        log "Running kernel $running is the newest installed"
+    fi
+}
+
 # Function to perform immediate update (original behavior)
 immediate_update() {
     log "Performing immediate update"
@@ -250,13 +419,20 @@ immediate_update() {
 # Main logic based on arguments
 case "${1:-}" in
     --track|-t)
+        self_update
         log "Running apt-get update (pre-track)"
         apt-get update
         track_packages
         exit 0
         ;;
+    --self-update)
+        self_update
+        exit $?
+        ;;
     --delayed|-d)
+        run_mode=delayed
         delayed_update
+        post_update_checks
         ;;
     --status|-s)
         log "Package tracking status (min age: $MIN_AGE_DAYS days):"
@@ -266,6 +442,7 @@ case "${1:-}" in
         else
             log "No tracking file. Run --track first."
         fi
+        post_update_checks
         exit 0
         ;;
     --help|-h)
@@ -273,12 +450,15 @@ case "${1:-}" in
         echo "  --track, -t     Track new package updates (run daily)"
         echo "  --delayed, -d   Install only packages aged $MIN_AGE_DAYS+ days"
         echo "  --status, -s    Show status of tracked packages"
+        echo "  --self-update   Update this repository now (git pull --ff-only)"
         echo "  --help, -h      Show this help"
         echo "  (no option)     Original behavior: install all updates immediately"
         exit 0
         ;;
     "")
+        run_mode=immediate
         immediate_update
+        post_update_checks
         ;;
     *)
         log "Unknown option: $1"
@@ -295,6 +475,20 @@ else
     subject="HOERA - Linux autoUpdate voor server: $servert is succesvol!!!"
     echo "HOERA het is GOED!!!" > ./email.txt
     echo "Server: $servert" >> ./email.txt
+fi
+echo "Script: LinuxScripts $(script_version)" >> ./email.txt
+
+will_reboot=0
+if [[ $reboot_needed -eq 1 ]]; then
+    # Only the nightly --delayed run reboots; a manual run never reboots by surprise.
+    if [[ "$run_mode" == "delayed" && "$AUTO_REBOOT" == "yes" ]] && [[ " $AUTO_REBOOT_WEEKDAYS " == *" $(date +%u) "* ]]; then
+        will_reboot=1
+        subject="$subject (reboot volgt)"
+        echo "Reboot volgt na deze run: $reboot_reason" >> ./email.txt
+    else
+        subject="$subject (REBOOT NODIG)"
+        echo "REBOOT NODIG: $reboot_reason" >> ./email.txt
+    fi
 fi
 
 cat /etc/*-release >> ./email.txt
@@ -318,4 +512,9 @@ if [[ $mail_status -eq 0 ]]; then
     log "mail command exit 0 - message queued to local MTA"
 else
     log "mail command exit $mail_status - message NOT queued"
+fi
+
+if [[ $will_reboot -eq 1 ]]; then
+    log "AUTO_REBOOT: rebooting in 2 minutes ($reboot_reason)"
+    shutdown -r +2 "autoUpdate: reboot for updates ($reboot_reason)"
 fi
