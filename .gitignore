@@ -4,3 +4,7 @@
 /autoUpdate/updatelog.log
 /logs
 /.idea
+/autoUpdate/autoUpdate.conf
+/autoUpdate/reboot_required_since
+/autoUpdate/self_update_status
+/autoUpdate/tracklog.log

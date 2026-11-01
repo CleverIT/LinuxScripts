@@ -1,0 +1,24 @@
+# Copy to autoUpdate.conf (same directory, not in git) to change the defaults.
+
+# Reboot automatically 2 minutes after the nightly --delayed run when the
+# running kernel is older than the newest installed one (or
+# /run/reboot-required exists). A manual run never reboots. Default: yes.
+AUTO_REBOOT=yes
+
+# Days on which an automatic reboot is allowed (date +%u: 1=Monday ... 7=Sunday).
+# Example: only the night from Saturday to Sunday -> "7"
+AUTO_REBOOT_WEEKDAYS="1 2 3 4 5 6 7"
+
+# After this many days with a pending reboot the status mail becomes ERROR
+# instead of HOERA (with AUTO_REBOOT=yes: the reboot does not happen or does
+# not help). 8 leaves room for a once-a-week AUTO_REBOOT_WEEKDAYS.
+REBOOT_ALERT_DAYS=8
+
+# Minimum free space in a separate /boot partition (MB); a Debian kernel with
+# initrd takes about 55 MB.
+BOOT_MIN_FREE_MB=80
+
+# --track first updates this repository with git pull --ff-only, so every
+# server runs the current script. A failed pull makes the next status mail
+# ERROR. Set to no to pin a server to its current version.
+SELF_UPDATE=yes
